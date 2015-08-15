@@ -39,4 +39,5 @@ atlassian-ide-plugin.xml
 .java-version
 
 *.png
+*.jpg
 *.properties

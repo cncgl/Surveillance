@@ -1,0 +1,7 @@
+ftp.interval=60000
+ftp.host=
+ftp.user=
+ftp.password=
+
+image.local.filename=capture.jpg
+image.remote.filename=
