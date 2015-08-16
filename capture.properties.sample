@@ -1,7 +1,9 @@
 ftp.interval=60000
 ftp.host=
+ftp.port=22
 ftp.user=
 ftp.password=
+ftp.passphase=
 
 image.local.filename=capture.jpg
 image.remote.filename=

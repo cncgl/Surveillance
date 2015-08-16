@@ -1,10 +1,12 @@
 package jp.cogel.camera;
 
 import java.awt.image.BufferedImage;
+import java.awt.Dimension;
 import java.io.*;
 import java.io.IOException;
 
 import java.util.Calendar;
+import java.util.Date;
 import java.util.Properties;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -14,6 +16,7 @@ import java.text.*;
 import javax.imageio.ImageIO;
 
 import com.github.sarxos.webcam.Webcam;
+import com.jcraft.jsch.*;
 
 
 /**
@@ -24,18 +27,28 @@ import com.github.sarxos.webcam.Webcam;
 public class Capture extends TimerTask {
 	private static final String PROPERTIES_FILENAME = "capture.properties";
 	private static final Format FILEDATE_FORMAT = new SimpleDateFormat("YYYYMMddHHmmss");
+	private static final Format LOG_FORMAT = new SimpleDateFormat("YYYY-MM-dd HH:mm:ss");
 	public Properties prop = new Properties();
 
-	private Webcam webcam = Webcam.getDefault();
+	private Webcam   webcam  = null;
+	private JSch     jsch    = null;
+	private Session  session = null;
+	private UserInfo info    = null;
 
 	public Capture() {
 		try {
 			loadProerties();
+			info = new ScpUserInfo(prop);
 		} catch(Exception ex) {
 			System.out.println(PROPERTIES_FILENAME + " not found.");
 		}
 
+		webcam = Webcam.getDefault();
+		webcam.setViewSize(new Dimension(640, 480));
 		webcam.open();
+
+		jsch = new JSch();
+
 	}
 
 	private void loadProerties() throws Exception {
@@ -62,6 +75,7 @@ public class Capture extends TimerTask {
 	@Override
 	public void run() {
 		try {
+			//webcam.open();
 			// get image
 			BufferedImage image = webcam.getImage();
 
@@ -70,12 +84,118 @@ public class Capture extends TimerTask {
 			int i = filename.indexOf(".");
 			String base = filename.substring(0,i);
 			String ext  = filename.substring(i+1);
-			System.out.println("base:"+base+",ext:"+ext);
-			ImageIO.write(image, "JPEG", new File( base+"-"+FILEDATE_FORMAT.format(Calendar.getInstance().getTime())+"."+ext ));
+			//System.out.println("base:"+base+",ext:"+ext);
+			String type = "";
+			if("jpg".equals(ext.toLowerCase()) || "jpeg".equals(ext.toLowerCase())) {
+				type = "JPEG";
+			} else if("png".equals(ext.toLowerCase())) {
+				type = "PNG";
+			} else if("bmp".equals(ext.toLowerCase())) {
+				type = "BMP";
+			} else if("gif".equals(ext.toLowerCase())) {
+				type = "GIF";
+			} else if("wbmp".equals(ext.toLowerCase())) {
+				type = "WBMP";
+			} else {
+				System.out.println(ext + " is not supported.");
+				System.exit(0);
+			}
+			Date now = Calendar.getInstance().getTime();
+			String lfile = base + "-" + FILEDATE_FORMAT.format(now) + "." + ext;
+			ImageIO.write(image, type, new File(lfile));
+			System.out.println("DONE: "+LOG_FORMAT.format(now));
+
+			//webcam.close();
+
+			// send to SCP host
+			String rfile = prop.getProperty("image.remote.filename");
+			sendToScp(lfile, rfile);
+
+
 		} catch (IOException ex) {
 			System.err.println(ex.getMessage());
 			ex.printStackTrace();
+		} catch (JSchException ex) {
+			System.err.println(ex.getMessage());
+			ex.printStackTrace();
 		}
+	}
+
+	private void sendToScp( String lfile, String rfile ) throws IOException, JSchException {
+		if( session == null ) {
+			String user = prop.getProperty("ftp.user");
+			String host = prop.getProperty("ftp.host");
+			int    port = Integer.parseInt(prop.getProperty("ftp.port"));
+			session = jsch.getSession(user, host, port);
+			session.setUserInfo(info);
+		}
+		if( !session.isConnected() ) {
+			session.connect();
+		}
+		boolean ptimestamp = true;
+
+		String command="scp " + (ptimestamp ? "-p" :"") +" -t "+rfile;
+		Channel channel=session.openChannel("exec");
+		((ChannelExec)channel).setCommand(command);
+
+		OutputStream out=channel.getOutputStream();
+		InputStream in=channel.getInputStream();
+
+		channel.connect();
+
+		// 死活チェック
+		//  System.exit(0);
+
+		File _lfile = new File(lfile);
+
+		if(ptimestamp){
+			command="T "+(_lfile.lastModified()/1000)+" 0";
+			// The access time should be sent here,
+			// but it is not accessible with JavaAPI ;-<
+			command+=(" "+(_lfile.lastModified()/1000)+" 0\n");
+			out.write(command.getBytes()); out.flush();
+
+			// 死活チェック
+			//if(checkAck(in)!=0){
+			//   System.exit(0);
+			//}
+		}
+
+		long filesize=_lfile.length();
+		command = "C0644 " + filesize + " ";
+		if(lfile.lastIndexOf('/')>0){
+			command+=lfile.substring(lfile.lastIndexOf('/')+1);
+		} else {
+			command+=lfile;
+		}
+		command += "\n";
+		out.write(command.getBytes()); out.flush();
+
+		// 死活チェック
+		//if(checkAck(in)!=0){
+		//   System.exit(0);
+		//}
+
+		FileInputStream fis=new FileInputStream(lfile);
+		byte[] buf = new byte[1024];
+		while(true){
+			int len = fis.read(buf, 0, buf.length);
+			if(len<=0) break;
+			out.write(buf, 0, len); //out.flush();
+		}
+		fis.close();
+		fis=null;
+		// send '\0'
+		buf[0]=0; out.write(buf, 0, 1); out.flush();
+
+		// 死活チェック
+		//if(checkAck(in)!=0){
+		//	System.exit(0);
+		//}
+		out.close();
+
+		channel.disconnect();
+		//session.disconnect();
 	}
 
 	public static void main(String[] args) throws IOException {
