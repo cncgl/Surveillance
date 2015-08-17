@@ -30,12 +30,12 @@ public class Capture extends TimerTask {
 	private static final Format LOG_FORMAT = new SimpleDateFormat("YYYY-MM-dd HH:mm:ss");
 	public Properties prop = new Properties();
 
-	private Webcam   webcam  = null;
+	private static Webcam   webcam  = null;
 	private JSch     jsch    = null;
 	private Session  session = null;
 	private UserInfo info    = null;
 
-	public Capture() {
+	public Capture() throws WebcamException {
 		try {
 			loadProerties();
 			info = new ScpUserInfo(prop);
@@ -44,11 +44,14 @@ public class Capture extends TimerTask {
 		}
 
 		webcam = Webcam.getDefault();
-		webcam.setViewSize(new Dimension(640, 480));
-		webcam.open();
+		if( webcam == null) {
+			throw new WebcamException("Webcam not ready.");
+		} else {
+			webcam.setViewSize(new Dimension(640, 480));
+			webcam.open();
 
-		jsch = new JSch();
-
+			jsch = new JSch();
+		}
 	}
 
 	private void loadProerties() throws Exception {
@@ -200,8 +203,18 @@ public class Capture extends TimerTask {
 
 	public static void main(String[] args) throws IOException {
 		Timer t = new Timer();
-		Capture capture = new Capture();
-		long interval = Long.parseLong( capture.prop.getProperty("ftp.interval") );
-		t.schedule( capture, 0 , interval );
+		try {
+			Capture capture = new Capture();
+			long interval = Long.parseLong( capture.prop.getProperty("ftp.interval") );
+			t.schedule( capture, 0 , interval );
+		} catch(WebcamException ex) {
+			System.err.println(ex.getMessage());
+			ex.printStackTrace();
+			System.exit(1);
+		}
+		if( webcam!=null ) {
+			webcam.close();
+		}
+
 	}
 }
