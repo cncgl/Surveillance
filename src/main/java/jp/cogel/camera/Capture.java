@@ -78,7 +78,7 @@ public class Capture extends TimerTask {
 	@Override
 	public void run() {
 		try {
-			//webcam.open();
+			webcam.open();
 			// get image
 			BufferedImage image = webcam.getImage();
 
@@ -105,10 +105,11 @@ public class Capture extends TimerTask {
 			}
 			Date now = Calendar.getInstance().getTime();
 			String lfile = base + "-" + FILEDATE_FORMAT.format(now) + "." + ext;
+			System.out.printf("filename:%s lfile:%s ext:%s type:%s\n", filename, lfile, ext, type);
 			ImageIO.write(image, type, new File(lfile));
 			System.out.println("DONE: "+LOG_FORMAT.format(now));
 
-			//webcam.close();
+			webcam.close();
 
 			// send to SCP host
 			String rfile = prop.getProperty("image.remote.filename");
